@@ -1,0 +1,6 @@
+gunicorn  services: 
+  - type: web 
+    name: kisetigi 
+    env: python 
+    plan: free 
+    buildCommand: "pip install -r requirements.txt" 

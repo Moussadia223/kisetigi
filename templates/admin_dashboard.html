@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html>
+<head><title>Admin Dashboard</title><style>body{font-family:Arial;padding:20px;}</style></head>
+<body>
+<h1>Tableau de bord Admin</h1>
+<p>Utilisateurs: {{ stats.total_users }}</p>
+<p>Vidéos: {{ stats.total_videos }}</p>
+<p>Produits: {{ stats.total_products }}</p>
+<p>Commandes: {{ stats.total_orders }}</p>
+<p>Revenus: {{ stats.total_revenue }}€</p>
+<p>Lives actifs: {{ stats.active_lives }}</p>
+<a href="/admin">Admin Flask-Admin</a>
+</body>
+</html>

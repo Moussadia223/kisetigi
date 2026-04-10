@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kise Tigi - Réseau Social</title>
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <style>
+        body { font-family: Arial; margin: 0; padding: 20px; background: #f0f0f0; }
+        .container { max-width: 800px; margin: auto; background: white; padding: 20px; border-radius: 10px; }
+        input, textarea, button { margin: 5px; padding: 10px; width: 100%; }
+        .video-card { border: 1px solid #ddd; margin: 10px 0; padding: 10px; }
+        video { width: 100%; max-height: 500px; background: black; }
+        .nav { background: #667eea; color: white; padding: 10px; display: flex; gap: 10px; }
+        .nav button { background: white; color: #667eea; border: none; padding: 5px 10px; cursor: pointer; }
+        .active-view { display: block; }
+        .view { display: none; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="nav">
+        <button onclick="showView('feed')">Accueil</button>
+        <button onclick="showView('upload')">Upload</button>
+        <button onclick="showView('shop')">Boutique</button>
+        <button onclick="showView('live')">Live</button>
+        <button onclick="showView('messages')">Messages</button>
+        <button id="logoutBtn">Déconnexion</button>
+    </div>
+
+    <div id="authDiv">
+        <h2>Connexion</h2>
+        <input type="email" id="loginEmail" placeholder="Email">
+        <input type="password" id="loginPassword" placeholder="Mot de passe">
+        <button onclick="login()">Se connecter</button>
+        <hr>
+        <h3>Inscription</h3>
+        <input type="text" id="regUsername" placeholder="Nom d'utilisateur">
+        <input type="email" id="regEmail" placeholder="Email">
+        <input type="password" id="regPassword" placeholder="Mot de passe">
+        <button onclick="register()">S'inscrire</button>
+    </div>
+
+    <div id="appDiv" style="display:none;">
+        <div id="feedView" class="view">
+            <h2>Flux vidéo</h2>
+            <div id="videosList"></div>
+        </div>
+        <div id="uploadView" class="view">
+            <h2>Uploader une vidéo</h2>
+            <input type="file" id="videoFile" accept="video/*">
+            <input type="text" id="videoTitle" placeholder="Titre">
+            <textarea id="videoDesc" placeholder="Description"></textarea>
+            <button onclick="uploadVideo()">Publier</button>
+        </div>
+        <div id="shopView" class="view">
+            <h2>Boutique</h2>
+            <div id="productsList"></div>
+        </div>
+        <div id="liveView" class="view">
+            <h2>Live Streaming</h2>
+            <input type="text" id="liveTitle" placeholder="Titre du live">
+            <button onclick="startLive()">Démarrer un live</button>
+            <div id="activeLives"></div>
+        </div>
+        <div id="messagesView" class="view">
+            <h2>Messages privés</h2>
+            <input type="text" id="msgReceiver" placeholder="ID du destinataire">
+            <textarea id="msgContent" placeholder="Votre message"></textarea>
+            <button onclick="sendMessage()">Envoyer</button>
+            <div id="conversations"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+let token = null;
+let socket = null;
+
+function showView(view) {
+    document.querySelectorAll('.view').forEach(v => v.style.display = 'none');
+    document.getElementById(view + 'View').style.display = 'block';
+}
+
+async function register() {
+    const username = document.getElementById('regUsername').value;
+    const email = document.getElementById('regEmail').value;
+    const password = document.getElementById('regPassword').value;
+    const res = await fetch('/api/register', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({username, email, password})
+    });
+    const data = await res.json();
+    if (res.ok) {
+        alert('Inscription réussie, connectez-vous');
+    } else {
+        alert(data.error);
+    }
+}
+
+async function login() {
+    const email = document.getElementById('loginEmail').value;
+    const password = document.getElementById('loginPassword').value;
+    const res = await fetch('/api/login', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({email, password})
+    });
+    const data = await res.json();
+    if (res.ok) {
+        token = data.access_token;
+        document.getElementById('authDiv').style.display = 'none';
+        document.getElementById('appDiv').style.display = 'block';
+        loadVideos();
+        loadProducts();
+        loadActiveLives();
+        connectSocket();
+    } else {
+        alert(data.error);
+    }
+}
+
+document.getElementById('logoutBtn').onclick = () => {
+    token = null;
+    document.getElementById('authDiv').style.display = 'block';
+    document.getElementById('appDiv').style.display = 'none';
+    if (socket) socket.disconnect();
+};
+
+async function loadVideos() {
+    const res = await fetch('/api/videos');
+    const data = await res.json();
+    const div = document.getElementById('videosList');
+    div.innerHTML = data.videos.map(v => `
+        <div class="video-card">
+            <strong>${v.title}</strong> par @${v.user?.username || 'inconnu'}<br>
+            <video controls src="${v.video_url}"></video>
+            <p>❤️ ${v.likes_count} vues ${v.views}</p>
+        </div>
+    `).join('');
+}
+
+async function uploadVideo() {
+    const file = document.getElementById('videoFile').files[0];
+    const title = document.getElementById('videoTitle').value;
+    const desc = document.getElementById('videoDesc').value;
+    const formData = new FormData();
+    formData.append('video', file);
+    formData.append('title', title);
+    formData.append('description', desc);
+    const res = await fetch('/api/videos/upload', {
+        method: 'POST',
+        headers: {'Authorization': `Bearer ${token}`},
+        body: formData
+    });
+    if (res.ok) {
+        alert('Vidéo uploadée');
+        loadVideos();
+    } else {
+        alert('Erreur upload');
+    }
+}
+
+async function loadProducts() {
+    const res = await fetch('/api/products');
+    const data = await res.json();
+    document.getElementById('productsList').innerHTML = data.products.map(p => `
+        <div class="video-card">
+            <strong>${p.name}</strong> - ${p.price}€<br>
+            ${p.description}<br>
+            <button onclick="buyProduct('${p.id}')">Acheter</button>
+        </div>
+    `).join('');
+}
+
+async function buyProduct(productId) {
+    // Simulé
+    alert('Fonctionnalité de paiement à intégrer (Stripe)');
+}
+
+async function startLive() {
+    const title = document.getElementById('liveTitle').value;
+    const res = await fetch('/api/live/start', {
+        method: 'POST',
+        headers: {'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json'},
+        body: JSON.stringify({title})
+    });
+    const data = await res.json();
+    alert(`Live démarré ! Channel: ${data.channel}`);
+    loadActiveLives();
+}
+
+async function loadActiveLives() {
+    const res = await fetch('/api/live/active');
+    const data = await res.json();
+    document.getElementById('activeLives').innerHTML = (data.lives || []).map(l => `
+        <div>🔴 ${l.title} par @${l.user?.username} - ${l.viewers_count} spectateurs</div>
+    `).join('');
+}
+
+async function sendMessage() {
+    const receiverId = document.getElementById('msgReceiver').value;
+    const content = document.getElementById('msgContent').value;
+    await fetch('/api/messages/send', {
+        method: 'POST',
+        headers: {'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json'},
+        body: JSON.stringify({receiver_id: receiverId, content})
+    });
+    alert('Message envoyé');
+}
+
+function connectSocket() {
+    socket = io();
+    socket.on('new_message', (msg) => {
+        console.log('Nouveau message:', msg);
+    });
+}
+
+// Afficher feed par défaut
+showView('feed');
+</script>
+</body>
+</html>
