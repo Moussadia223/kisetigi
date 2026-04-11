@@ -4,221 +4,487 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Kise Tigi - Réseau Social</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
     <style>
-        body { font-family: Arial; margin: 0; padding: 20px; background: #f0f0f0; }
-        .container { max-width: 800px; margin: auto; background: white; padding: 20px; border-radius: 10px; }
-        input, textarea, button { margin: 5px; padding: 10px; width: 100%; }
-        .video-card { border: 1px solid #ddd; margin: 10px 0; padding: 10px; }
-        video { width: 100%; max-height: 500px; background: black; }
-        .nav { background: #667eea; color: white; padding: 10px; display: flex; gap: 10px; }
-        .nav button { background: white; color: #667eea; border: none; padding: 5px 10px; cursor: pointer; }
-        .active-view { display: block; }
-        .view { display: none; }
+        .video-card { transition: transform 0.2s; }
+        .video-card:hover { transform: scale(1.02); }
+        .comment-section { background: #f8f9fa; border-radius: 10px; padding: 15px; margin-top: 15px; }
+        .like-btn.liked { color: #dc3545; }
+        .profile-avatar { width: 80px; height: 80px; object-fit: cover; }
     </style>
 </head>
-<body>
-<div class="container">
-    <div class="nav">
-        <button onclick="showView('feed')">Accueil</button>
-        <button onclick="showView('upload')">Upload</button>
-        <button onclick="showView('shop')">Boutique</button>
-        <button onclick="showView('live')">Live</button>
-        <button onclick="showView('messages')">Messages</button>
-        <button id="logoutBtn">Déconnexion</button>
+<body class="bg-dark">
+    <div id="app">
+        <!-- Écran de connexion / inscription -->
+        <div id="auth-screen" class="d-flex justify-content-center align-items-center vh-100">
+            <div class="card p-4 shadow-lg" style="max-width: 450px; width: 100%;">
+                <h1 class="text-center text-primary">🎬 Kise Tigi</h1>
+                <ul class="nav nav-tabs mt-3" id="authTab" role="tablist">
+                    <li class="nav-item">
+                        <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#login" type="button">Connexion</button>
+                    </li>
+                    <li class="nav-item">
+                        <button class="nav-link" data-bs-toggle="tab" data-bs-target="#register" type="button">Inscription</button>
+                    </li>
+                </ul>
+                <div class="tab-content mt-3">
+                    <div class="tab-pane fade show active" id="login">
+                        <input type="email" id="loginEmail" class="form-control mb-2" placeholder="Email">
+                        <input type="password" id="loginPassword" class="form-control mb-2" placeholder="Mot de passe">
+                        <button class="btn btn-primary w-100" onclick="login()">Se connecter</button>
+                    </div>
+                    <div class="tab-pane fade" id="register">
+                        <input type="text" id="regUsername" class="form-control mb-2" placeholder="Nom d'utilisateur">
+                        <input type="email" id="regEmail" class="form-control mb-2" placeholder="Email">
+                        <input type="password" id="regPassword" class="form-control mb-2" placeholder="Mot de passe">
+                        <button class="btn btn-success w-100" onclick="register()">S'inscrire</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Interface principale (après connexion) -->
+        <div id="main-screen" style="display:none;">
+            <nav class="navbar navbar-expand-lg navbar-dark bg-primary sticky-top">
+                <div class="container">
+                    <a class="navbar-brand" href="#">🎬 Kise Tigi</a>
+                    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                        <span class="navbar-toggler-icon"></span>
+                    </button>
+                    <div class="collapse navbar-collapse" id="navbarNav">
+                        <div class="navbar-nav ms-auto">
+                            <button class="btn btn-outline-light me-2" onclick="showView('feed')">🏠 Accueil</button>
+                            <button class="btn btn-outline-light me-2" onclick="showView('upload')">📤 Upload</button>
+                            <button class="btn btn-outline-light me-2" onclick="showView('shop')">🛍️ Boutique</button>
+                            <button class="btn btn-outline-light me-2" onclick="showView('live')">🔴 Live</button>
+                            <button class="btn btn-outline-light me-2" onclick="showView('messages')">💬 Messages</button>
+                            <button class="btn btn-outline-light me-2" onclick="showView('profile')">👤 Profil</button>
+                            <button class="btn btn-danger" id="logoutBtn">🚪 Déconnexion</button>
+                        </div>
+                    </div>
+                </div>
+            </nav>
+
+            <div class="container mt-4">
+                <!-- Vue Feed -->
+                <div id="feed-view" class="view">
+                    <div class="d-flex justify-content-center gap-3 mb-4">
+                        <button class="btn btn-secondary" onclick="loadFeed('for-you')">📱 Pour toi</button>
+                        <button class="btn btn-secondary" onclick="loadFeed('nearby')">📍 Proximité</button>
+                    </div>
+                    <div id="videos-container" class="row g-4"></div>
+                </div>
+
+                <!-- Vue Upload -->
+                <div id="upload-view" class="view">
+                    <div class="card p-4 shadow-sm">
+                        <h3 class="mb-3">📤 Publier une vidéo</h3>
+                        <input type="file" id="videoFile" class="form-control mb-3" accept="video/*">
+                        <input type="text" id="videoTitle" class="form-control mb-3" placeholder="Titre">
+                        <textarea id="videoDesc" class="form-control mb-3" rows="3" placeholder="Description"></textarea>
+                        <input type="text" id="videoMusic" class="form-control mb-3" placeholder="Musique (optionnel)">
+                        <button class="btn btn-primary" onclick="uploadVideo()">Publier</button>
+                        <div id="uploadProgress" class="progress mt-3" style="display:none;">
+                            <div class="progress-bar progress-bar-striped progress-bar-animated" style="width: 100%">Upload en cours...</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Vue Boutique -->
+                <div id="shop-view" class="view">
+                    <h2>🛍️ Kise Tigi Shop</h2>
+                    <div id="productsList" class="row g-4 mt-2"></div>
+                </div>
+
+                <!-- Vue Live -->
+                <div id="live-view" class="view">
+                    <h2>🔴 Live Streaming</h2>
+                    <div class="card p-3 mb-4">
+                        <input type="text" id="liveTitle" class="form-control mb-2" placeholder="Titre du live">
+                        <button class="btn btn-danger" onclick="startLive()">Démarrer un live</button>
+                    </div>
+                    <h4>Lives en cours</h4>
+                    <div id="activeLives" class="row g-3"></div>
+                </div>
+
+                <!-- Vue Messages -->
+                <div id="messages-view" class="view">
+                    <h2>💬 Messages privés</h2>
+                    <div class="card p-3 mb-4">
+                        <input type="text" id="msgReceiver" class="form-control mb-2" placeholder="ID du destinataire">
+                        <textarea id="msgContent" class="form-control mb-2" rows="2" placeholder="Votre message"></textarea>
+                        <button class="btn btn-primary" onclick="sendMessage()">Envoyer</button>
+                    </div>
+                    <div id="conversations" class="border rounded p-3 bg-light"></div>
+                </div>
+
+                <!-- Vue Profil -->
+                <div id="profile-view" class="view">
+                    <div class="card p-4 shadow-sm">
+                        <div class="d-flex align-items-center gap-4 flex-wrap">
+                            <img id="profileAvatar" src="https://via.placeholder.com/100" class="rounded-circle profile-avatar">
+                            <div>
+                                <h2 id="profileUsername"></h2>
+                                <p id="profileBio" class="text-muted"></p>
+                                <div class="d-flex gap-4">
+                                    <span><strong id="followersCount">0</strong> abonnés</span>
+                                    <span><strong id="followingCount">0</strong> abonnements</span>
+                                    <span><strong id="videosCount">0</strong> vidéos</span>
+                                </div>
+                            </div>
+                        </div>
+                        <hr>
+                        <h4>Mes vidéos</h4>
+                        <div id="profileVideos" class="row g-3 mt-2"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 
-    <div id="authDiv">
-        <h2>Connexion</h2>
-        <input type="email" id="loginEmail" placeholder="Email">
-        <input type="password" id="loginPassword" placeholder="Mot de passe">
-        <button onclick="login()">Se connecter</button>
-        <hr>
-        <h3>Inscription</h3>
-        <input type="text" id="regUsername" placeholder="Nom d'utilisateur">
-        <input type="email" id="regEmail" placeholder="Email">
-        <input type="password" id="regPassword" placeholder="Mot de passe">
-        <button onclick="register()">S'inscrire</button>
-    </div>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // ---------- Configuration ----------
+        const API_URL = '/api';
+        let token = null;
+        let currentUser = null;
+        let socket = null;
 
-    <div id="appDiv" style="display:none;">
-        <div id="feedView" class="view">
-            <h2>Flux vidéo</h2>
-            <div id="videosList"></div>
-        </div>
-        <div id="uploadView" class="view">
-            <h2>Uploader une vidéo</h2>
-            <input type="file" id="videoFile" accept="video/*">
-            <input type="text" id="videoTitle" placeholder="Titre">
-            <textarea id="videoDesc" placeholder="Description"></textarea>
-            <button onclick="uploadVideo()">Publier</button>
-        </div>
-        <div id="shopView" class="view">
-            <h2>Boutique</h2>
-            <div id="productsList"></div>
-        </div>
-        <div id="liveView" class="view">
-            <h2>Live Streaming</h2>
-            <input type="text" id="liveTitle" placeholder="Titre du live">
-            <button onclick="startLive()">Démarrer un live</button>
-            <div id="activeLives"></div>
-        </div>
-        <div id="messagesView" class="view">
-            <h2>Messages privés</h2>
-            <input type="text" id="msgReceiver" placeholder="ID du destinataire">
-            <textarea id="msgContent" placeholder="Votre message"></textarea>
-            <button onclick="sendMessage()">Envoyer</button>
-            <div id="conversations"></div>
-        </div>
-    </div>
-</div>
+        // ---------- Utilitaires ----------
+        function showView(viewName) {
+            document.querySelectorAll('.view').forEach(v => v.style.display = 'none');
+            document.getElementById(viewName + '-view').style.display = 'block';
+        }
 
-<script>
-let token = null;
-let socket = null;
+        async function fetchAPI(endpoint, options = {}) {
+            const headers = {
+                'Content-Type': 'application/json',
+                ...options.headers
+            };
+            if (token) headers['Authorization'] = `Bearer ${token}`;
+            const res = await fetch(API_URL + endpoint, { ...options, headers });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Erreur serveur');
+            return data;
+        }
 
-function showView(view) {
-    document.querySelectorAll('.view').forEach(v => v.style.display = 'none');
-    document.getElementById(view + 'View').style.display = 'block';
-}
+        // ---------- Authentification ----------
+        async function register() {
+            const username = document.getElementById('regUsername').value;
+            const email = document.getElementById('regEmail').value;
+            const password = document.getElementById('regPassword').value;
+            try {
+                const data = await fetchAPI('/register', {
+                    method: 'POST',
+                    body: JSON.stringify({ username, email, password })
+                });
+                alert('Inscription réussie ! Connectez-vous.');
+                document.querySelector('[data-bs-target="#login"]').click();
+            } catch (err) {
+                alert(err.message);
+            }
+        }
 
-async function register() {
-    const username = document.getElementById('regUsername').value;
-    const email = document.getElementById('regEmail').value;
-    const password = document.getElementById('regPassword').value;
-    const res = await fetch('/api/register', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({username, email, password})
-    });
-    const data = await res.json();
-    if (res.ok) {
-        alert('Inscription réussie, connectez-vous');
-    } else {
-        alert(data.error);
-    }
-}
+        async function login() {
+            const email = document.getElementById('loginEmail').value;
+            const password = document.getElementById('loginPassword').value;
+            try {
+                const data = await fetchAPI('/login', {
+                    method: 'POST',
+                    body: JSON.stringify({ email, password })
+                });
+                token = data.access_token;
+                currentUser = data.user;
+                localStorage.setItem('token', token);
+                localStorage.setItem('user', JSON.stringify(currentUser));
+                document.getElementById('auth-screen').style.display = 'none';
+                document.getElementById('main-screen').style.display = 'block';
+                initSocket();
+                loadFeed('for-you');
+                loadProfile();
+                loadProducts();
+                loadActiveLives();
+                showView('feed');
+            } catch (err) {
+                alert(err.message);
+            }
+        }
 
-async function login() {
-    const email = document.getElementById('loginEmail').value;
-    const password = document.getElementById('loginPassword').value;
-    const res = await fetch('/api/login', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({email, password})
-    });
-    const data = await res.json();
-    if (res.ok) {
-        token = data.access_token;
-        document.getElementById('authDiv').style.display = 'none';
-        document.getElementById('appDiv').style.display = 'block';
-        loadVideos();
-        loadProducts();
-        loadActiveLives();
-        connectSocket();
-    } else {
-        alert(data.error);
-    }
-}
+        document.getElementById('logoutBtn').addEventListener('click', () => {
+            token = null;
+            currentUser = null;
+            localStorage.clear();
+            if (socket) socket.disconnect();
+            document.getElementById('auth-screen').style.display = 'flex';
+            document.getElementById('main-screen').style.display = 'none';
+        });
 
-document.getElementById('logoutBtn').onclick = () => {
-    token = null;
-    document.getElementById('authDiv').style.display = 'block';
-    document.getElementById('appDiv').style.display = 'none';
-    if (socket) socket.disconnect();
-};
+        // ---------- Feed Vidéos ----------
+        async function loadFeed(type = 'for-you') {
+            const container = document.getElementById('videos-container');
+            container.innerHTML = '<div class="text-center text-white">Chargement...</div>';
+            try {
+                let url = `/feed/${type}`;
+                if (type === 'nearby' && navigator.geolocation) {
+                    const pos = await new Promise((resolve, reject) => navigator.geolocation.getCurrentPosition(resolve, reject));
+                    url += `?lat=${pos.coords.latitude}&lng=${pos.coords.longitude}`;
+                }
+                const data = await fetchAPI(url);
+                const videos = data.videos || data;
+                if (!videos.length) {
+                    container.innerHTML = '<div class="text-center text-white">Aucune vidéo pour le moment</div>';
+                    return;
+                }
+                container.innerHTML = videos.map(v => `
+                    <div class="col-md-6 col-lg-4">
+                        <div class="card video-card h-100">
+                            <video src="${v.video_url}" class="card-img-top" controls poster="${v.thumbnail_url || ''}" style="max-height: 300px; object-fit: cover;"></video>
+                            <div class="card-body">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <h6 class="card-title">${v.title}</h6>
+                                    <span class="badge bg-secondary">@${v.user?.username || 'anonyme'}</span>
+                                </div>
+                                <p class="card-text small">${v.description || ''}</p>
+                                <div class="d-flex justify-content-between">
+                                    <button class="btn btn-sm btn-outline-danger like-btn" data-id="${v.id}">
+                                        ❤️ <span class="likes-count">${v.likes_count || 0}</span>
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-primary comment-btn" data-id="${v.id}">
+                                        💬 <span class="comments-count">${v.comments_count || 0}</span>
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-secondary share-btn" data-id="${v.id}">🔗 Partager</button>
+                                </div>
+                                <div class="comment-section mt-2" id="comments-${v.id}" style="display:none;">
+                                    <div class="comments-list small"></div>
+                                    <div class="input-group mt-2">
+                                        <input type="text" class="form-control form-control-sm comment-input" placeholder="Ajouter un commentaire...">
+                                        <button class="btn btn-sm btn-primary comment-submit" data-id="${v.id}">Envoyer</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `).join('');
 
-async function loadVideos() {
-    const res = await fetch('/api/videos');
-    const data = await res.json();
-    const div = document.getElementById('videosList');
-    div.innerHTML = data.videos.map(v => `
-        <div class="video-card">
-            <strong>${v.title}</strong> par @${v.user?.username || 'inconnu'}<br>
-            <video controls src="${v.video_url}"></video>
-            <p>❤️ ${v.likes_count} vues ${v.views}</p>
-        </div>
-    `).join('');
-}
+                // Événements like / commentaire
+                document.querySelectorAll('.like-btn').forEach(btn => {
+                    btn.addEventListener('click', () => likeVideo(btn.dataset.id));
+                });
+                document.querySelectorAll('.comment-btn').forEach(btn => {
+                    btn.addEventListener('click', () => toggleComments(btn.dataset.id));
+                });
+                document.querySelectorAll('.comment-submit').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        const videoId = btn.dataset.id;
+                        const input = document.querySelector(`#comments-${videoId} .comment-input`);
+                        addComment(videoId, input.value);
+                        input.value = '';
+                    });
+                });
+            } catch (err) {
+                container.innerHTML = `<div class="text-center text-danger">Erreur : ${err.message}</div>`;
+            }
+        }
 
-async function uploadVideo() {
-    const file = document.getElementById('videoFile').files[0];
-    const title = document.getElementById('videoTitle').value;
-    const desc = document.getElementById('videoDesc').value;
-    const formData = new FormData();
-    formData.append('video', file);
-    formData.append('title', title);
-    formData.append('description', desc);
-    const res = await fetch('/api/videos/upload', {
-        method: 'POST',
-        headers: {'Authorization': `Bearer ${token}`},
-        body: formData
-    });
-    if (res.ok) {
-        alert('Vidéo uploadée');
-        loadVideos();
-    } else {
-        alert('Erreur upload');
-    }
-}
+        async function likeVideo(videoId) {
+            try {
+                const data = await fetchAPI(`/videos/${videoId}/like`, { method: 'POST' });
+                const btn = document.querySelector(`.like-btn[data-id="${videoId}"]`);
+                const span = btn.querySelector('.likes-count');
+                span.textContent = data.likes_count;
+                if (data.action === 'liked') btn.classList.add('liked');
+                else btn.classList.remove('liked');
+            } catch (err) { console.error(err); }
+        }
 
-async function loadProducts() {
-    const res = await fetch('/api/products');
-    const data = await res.json();
-    document.getElementById('productsList').innerHTML = data.products.map(p => `
-        <div class="video-card">
-            <strong>${p.name}</strong> - ${p.price}€<br>
-            ${p.description}<br>
-            <button onclick="buyProduct('${p.id}')">Acheter</button>
-        </div>
-    `).join('');
-}
+        async function addComment(videoId, content) {
+            if (!content.trim()) return;
+            try {
+                await fetchAPI(`/videos/${videoId}/comments`, { method: 'POST', body: JSON.stringify({ content }) });
+                loadComments(videoId);
+            } catch (err) { alert(err.message); }
+        }
 
-async function buyProduct(productId) {
-    // Simulé
-    alert('Fonctionnalité de paiement à intégrer (Stripe)');
-}
+        async function loadComments(videoId) {
+            try {
+                const data = await fetchAPI(`/videos/${videoId}/comments`);
+                const container = document.querySelector(`#comments-${videoId} .comments-list`);
+                if (data.comments && data.comments.length) {
+                    container.innerHTML = data.comments.map(c => `<div><strong>@${c.user?.username}</strong> ${c.content} <small class="text-muted">${new Date(c.created_at).toLocaleString()}</small></div><hr>`).join('');
+                } else {
+                    container.innerHTML = '<div class="text-muted">Aucun commentaire</div>';
+                }
+            } catch (err) { console.error(err); }
+        }
 
-async function startLive() {
-    const title = document.getElementById('liveTitle').value;
-    const res = await fetch('/api/live/start', {
-        method: 'POST',
-        headers: {'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json'},
-        body: JSON.stringify({title})
-    });
-    const data = await res.json();
-    alert(`Live démarré ! Channel: ${data.channel}`);
-    loadActiveLives();
-}
+        function toggleComments(videoId) {
+            const section = document.getElementById(`comments-${videoId}`);
+            if (section.style.display === 'none') {
+                section.style.display = 'block';
+                loadComments(videoId);
+            } else {
+                section.style.display = 'none';
+            }
+        }
 
-async function loadActiveLives() {
-    const res = await fetch('/api/live/active');
-    const data = await res.json();
-    document.getElementById('activeLives').innerHTML = (data.lives || []).map(l => `
-        <div>🔴 ${l.title} par @${l.user?.username} - ${l.viewers_count} spectateurs</div>
-    `).join('');
-}
+        // ---------- Upload Vidéo ----------
+        async function uploadVideo() {
+            const file = document.getElementById('videoFile').files[0];
+            if (!file) { alert('Sélectionnez une vidéo'); return; }
+            const formData = new FormData();
+            formData.append('video', file);
+            formData.append('title', document.getElementById('videoTitle').value);
+            formData.append('description', document.getElementById('videoDesc').value);
+            formData.append('music_title', document.getElementById('videoMusic').value);
+            const progressDiv = document.getElementById('uploadProgress');
+            progressDiv.style.display = 'block';
+            try {
+                const res = await fetch(API_URL + '/videos/upload', {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${token}` },
+                    body: formData
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error);
+                alert('Vidéo uploadée avec succès !');
+                document.getElementById('upload-form')?.reset();
+                loadFeed('for-you');
+                showView('feed');
+            } catch (err) {
+                alert('Erreur upload : ' + err.message);
+            } finally {
+                progressDiv.style.display = 'none';
+            }
+        }
 
-async function sendMessage() {
-    const receiverId = document.getElementById('msgReceiver').value;
-    const content = document.getElementById('msgContent').value;
-    await fetch('/api/messages/send', {
-        method: 'POST',
-        headers: {'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json'},
-        body: JSON.stringify({receiver_id: receiverId, content})
-    });
-    alert('Message envoyé');
-}
+        // ---------- Boutique ----------
+        async function loadProducts() {
+            try {
+                const data = await fetchAPI('/products');
+                const container = document.getElementById('productsList');
+                if (!data.products || !data.products.length) {
+                    container.innerHTML = '<div class="col-12 text-white">Aucun produit</div>';
+                    return;
+                }
+                container.innerHTML = data.products.map(p => `
+                    <div class="col-md-4">
+                        <div class="card h-100">
+                            <div class="card-body">
+                                <h5 class="card-title">${p.name}</h5>
+                                <p class="card-text">${p.description || ''}</p>
+                                <p class="card-text"><strong>${p.price} ${p.currency}</strong></p>
+                                <button class="btn btn-sm btn-success" onclick="alert('Achat simulé')">Acheter</button>
+                            </div>
+                        </div>
+                    </div>
+                `).join('');
+            } catch (err) { console.error(err); }
+        }
 
-function connectSocket() {
-    socket = io();
-    socket.on('new_message', (msg) => {
-        console.log('Nouveau message:', msg);
-    });
-}
+        // ---------- Live ----------
+        async function startLive() {
+            const title = document.getElementById('liveTitle').value;
+            if (!title) { alert('Donnez un titre'); return; }
+            try {
+                const data = await fetchAPI('/live/start', { method: 'POST', body: JSON.stringify({ title }) });
+                alert(`Live "${data.live.title}" démarré ! Channel: ${data.channel}`);
+                loadActiveLives();
+            } catch (err) { alert(err.message); }
+        }
 
-// Afficher feed par défaut
-showView('feed');
-</script>
+        async function loadActiveLives() {
+            try {
+                const data = await fetchAPI('/live/active');
+                const container = document.getElementById('activeLives');
+                if (!data.lives || !data.lives.length) {
+                    container.innerHTML = '<div class="col-12 text-white">Aucun live en cours</div>';
+                    return;
+                }
+                container.innerHTML = data.lives.map(l => `
+                    <div class="col-md-4">
+                        <div class="card bg-danger text-white">
+                            <div class="card-body">
+                                <h5>🔴 ${l.title}</h5>
+                                <p>par @${l.user?.username}</p>
+                                <p>👥 ${l.viewers_count} spectateurs</p>
+                                <button class="btn btn-sm btn-light" onclick="alert('Rejoindre live simulé')">Rejoindre</button>
+                            </div>
+                        </div>
+                    </div>
+                `).join('');
+            } catch (err) { console.error(err); }
+        }
+
+        // ---------- Messages ----------
+        async function sendMessage() {
+            const receiverId = document.getElementById('msgReceiver').value;
+            const content = document.getElementById('msgContent').value;
+            if (!receiverId || !content) { alert('Destinataire et message requis'); return; }
+            try {
+                await fetchAPI('/messages/send', { method: 'POST', body: JSON.stringify({ receiver_id: receiverId, content }) });
+                alert('Message envoyé');
+                document.getElementById('msgContent').value = '';
+            } catch (err) { alert(err.message); }
+        }
+
+        // ---------- Profil ----------
+        async function loadProfile() {
+            if (!currentUser) return;
+            document.getElementById('profileUsername').innerText = `@${currentUser.username}`;
+            document.getElementById('profileBio').innerText = currentUser.bio || 'Aucune bio';
+            document.getElementById('followersCount').innerText = currentUser.followers_count || 0;
+            document.getElementById('followingCount').innerText = currentUser.following_count || 0;
+            document.getElementById('videosCount').innerText = currentUser.videos_count || 0;
+            try {
+                const data = await fetchAPI(`/videos?user_id=${currentUser.id}`);
+                const container = document.getElementById('profileVideos');
+                if (!data.videos || !data.videos.length) {
+                    container.innerHTML = '<div class="col-12">Aucune vidéo publiée</div>';
+                    return;
+                }
+                container.innerHTML = data.videos.map(v => `
+                    <div class="col-md-3">
+                        <video src="${v.video_url}" class="img-fluid rounded" controls style="max-height: 150px;"></video>
+                        <div class="small text-center">❤️ ${v.likes_count} 👁️ ${v.views}</div>
+                    </div>
+                `).join('');
+            } catch (err) { console.error(err); }
+        }
+
+        // ---------- WebSockets (notifications temps réel) ----------
+        function initSocket() {
+            socket = io();
+            socket.on('new_message', (msg) => {
+                alert(`Nouveau message de ${msg.sender?.username}: ${msg.content}`);
+            });
+            socket.on('like_update', (data) => {
+                const likeSpan = document.querySelector(`.like-btn[data-id="${data.video_id}"] .likes-count`);
+                if (likeSpan) likeSpan.innerText = data.likes_count;
+            });
+            socket.on('new_comment', (data) => {
+                if (document.getElementById(`comments-${data.video_id}`)?.style.display === 'block') {
+                    loadComments(data.video_id);
+                }
+            });
+        }
+
+        // ---------- Initialisation (vérifier token sauvegardé) ----------
+        const savedToken = localStorage.getItem('token');
+        const savedUser = localStorage.getItem('user');
+        if (savedToken && savedUser) {
+            token = savedToken;
+            currentUser = JSON.parse(savedUser);
+            document.getElementById('auth-screen').style.display = 'none';
+            document.getElementById('main-screen').style.display = 'block';
+            initSocket();
+            loadFeed('for-you');
+            loadProfile();
+            loadProducts();
+            loadActiveLives();
+            showView('feed');
+        }
+    </script>
 </body>
 </html>
