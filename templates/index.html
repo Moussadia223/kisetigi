@@ -77,15 +77,17 @@
                     <div id="videos-container" class="row g-4"></div>
                 </div>
 
-                <!-- Vue Upload -->
+                <!-- Vue Upload (ajout de l'id upload-form) -->
                 <div id="upload-view" class="view">
                     <div class="card p-4 shadow-sm">
                         <h3 class="mb-3">📤 Publier une vidéo</h3>
-                        <input type="file" id="videoFile" class="form-control mb-3" accept="video/*">
-                        <input type="text" id="videoTitle" class="form-control mb-3" placeholder="Titre">
-                        <textarea id="videoDesc" class="form-control mb-3" rows="3" placeholder="Description"></textarea>
-                        <input type="text" id="videoMusic" class="form-control mb-3" placeholder="Musique (optionnel)">
-                        <button class="btn btn-primary" onclick="uploadVideo()">Publier</button>
+                        <form id="upload-form" onsubmit="return false;">
+                            <input type="file" id="videoFile" class="form-control mb-3" accept="video/*" required>
+                            <input type="text" id="videoTitle" class="form-control mb-3" placeholder="Titre" required>
+                            <textarea id="videoDesc" class="form-control mb-3" rows="3" placeholder="Description"></textarea>
+                            <input type="text" id="videoMusic" class="form-control mb-3" placeholder="Musique (optionnel)">
+                            <button type="button" class="btn btn-primary" onclick="uploadVideo()">Publier</button>
+                        </form>
                         <div id="uploadProgress" class="progress mt-3" style="display:none;">
                             <div class="progress-bar progress-bar-striped progress-bar-animated" style="width: 100%">Upload en cours...</div>
                         </div>
@@ -268,7 +270,6 @@
                     </div>
                 `).join('');
 
-                // Événements like / commentaire
                 document.querySelectorAll('.like-btn').forEach(btn => {
                     btn.addEventListener('click', () => likeVideo(btn.dataset.id));
                 });
@@ -349,7 +350,7 @@
                 const data = await res.json();
                 if (!res.ok) throw new Error(data.error);
                 alert('Vidéo uploadée avec succès !');
-                document.getElementById('upload-form')?.reset();
+                document.getElementById('upload-form').reset();
                 loadFeed('for-you');
                 showView('feed');
             } catch (err) {
@@ -453,24 +454,26 @@
             } catch (err) { console.error(err); }
         }
 
-        // ---------- WebSockets (notifications temps réel) ----------
+        // ---------- WebSockets ----------
         function initSocket() {
-            socket = io();
-            socket.on('new_message', (msg) => {
-                alert(`Nouveau message de ${msg.sender?.username}: ${msg.content}`);
-            });
-            socket.on('like_update', (data) => {
-                const likeSpan = document.querySelector(`.like-btn[data-id="${data.video_id}"] .likes-count`);
-                if (likeSpan) likeSpan.innerText = data.likes_count;
-            });
-            socket.on('new_comment', (data) => {
-                if (document.getElementById(`comments-${data.video_id}`)?.style.display === 'block') {
-                    loadComments(data.video_id);
-                }
-            });
+            try {
+                socket = io();
+                socket.on('new_message', (msg) => {
+                    alert(`Nouveau message de ${msg.sender?.username}: ${msg.content}`);
+                });
+                socket.on('like_update', (data) => {
+                    const likeSpan = document.querySelector(`.like-btn[data-id="${data.video_id}"] .likes-count`);
+                    if (likeSpan) likeSpan.innerText = data.likes_count;
+                });
+                socket.on('new_comment', (data) => {
+                    if (document.getElementById(`comments-${data.video_id}`)?.style.display === 'block') {
+                        loadComments(data.video_id);
+                    }
+                });
+            } catch(e) { console.warn("Socket.IO non connecté"); }
         }
 
-        // ---------- Initialisation (vérifier token sauvegardé) ----------
+        // ---------- Initialisation ----------
         const savedToken = localStorage.getItem('token');
         const savedUser = localStorage.getItem('user');
         if (savedToken && savedUser) {
