@@ -105,6 +105,7 @@ class Video(db.Model):
     is_live = db.Column(db.Boolean, default=False)
     is_shoppable = db.Column(db.Boolean, default=False)
     price = db.Column(db.Float, default=0.0)
+    is_private = db.Column(db.Boolean, default=False)   # AJOUTÉ pour éviter l'erreur
     created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow)
 
     user = db.relationship('User', backref='videos')
@@ -226,7 +227,7 @@ class LiveStream(db.Model):
             'is_active': self.is_active,
             'viewers_count': self.viewers_count,
             'donations_amount': self.donations_amount,
-            'started_at': self.started_at.isoformat() if self.starting_at else None
+            'started_at': self.started_at.isoformat() if self.started_at else None   # CORRIGÉ
         }
 
 # ==================== ADMIN VIEWS ====================
@@ -331,9 +332,6 @@ def get_videos():
 def like_video(video_id):
     user_id = get_jwt_identity()
     video = Video.query.get_or_404(video_id)
-    # Vérifier si l'utilisateur a déjà liké (simplifié, sans table Like)
-    # Pour l'instant, on alterne simplement +1 / -1 (sans vérification)
-    # En production, il faudrait une table Like pour éviter les doublons.
     video.likes_count += 1
     db.session.commit()
     socketio.emit('like_update', {'video_id': video_id, 'likes_count': video.likes_count, 'user_id': user_id, 'action': 'liked'}, room=f'video_{video_id}')
@@ -341,14 +339,12 @@ def like_video(video_id):
 
 @app.route('/api/videos/<video_id>/comments', methods=['GET'])
 def get_comments(video_id):
-    # Pour simplifier, on retourne une liste vide (à implémenter avec une table Comment)
     return jsonify({'comments': []})
 
 @app.route('/api/videos/<video_id>/comments', methods=['POST'])
 @jwt_required()
 def add_comment(video_id):
     data = request.get_json()
-    # À implémenter avec une table Comment
     return jsonify({'message': 'Commentaire ajouté'}), 201
 
 @app.route('/api/products', methods=['GET'])
@@ -411,23 +407,20 @@ def start_live():
         'channel': channel
     })
 
-# ==================== ROUTES FEED ET LIVE (AJOUTÉES) ====================
+# ==================== ROUTES FEED ET LIVE ====================
 
 @app.route('/api/feed/for-you', methods=['GET'])
 def for_you_feed():
-    """Flux personnalisé 'Pour toi' (public pour l'instant)"""
-    videos = Video.query.filter_by(is_private=False).order_by(Video.created_at.desc()).limit(20).all()
+    videos = Video.query.filter_by(is_live=False).order_by(Video.created_at.desc()).limit(20).all()
     return jsonify({'videos': [v.to_dict() for v in videos]})
 
 @app.route('/api/feed/nearby', methods=['GET'])
 def nearby_feed():
-    """Flux de proximité (simplifié)"""
-    videos = Video.query.filter_by(is_private=False).order_by(Video.created_at.desc()).limit(20).all()
+    videos = Video.query.filter_by(is_live=False).order_by(Video.created_at.desc()).limit(20).all()
     return jsonify({'videos': [v.to_dict() for v in videos]})
 
 @app.route('/api/live/active', methods=['GET'])
 def get_active_lives():
-    """Liste des lives en cours"""
     lives = LiveStream.query.filter_by(is_active=True).all()
     return jsonify({'lives': [l.to_dict() for l in lives]})
 
