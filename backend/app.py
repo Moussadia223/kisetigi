@@ -105,7 +105,7 @@ class Video(db.Model):
     is_live = db.Column(db.Boolean, default=False)
     is_shoppable = db.Column(db.Boolean, default=False)
     price = db.Column(db.Float, default=0.0)
-    is_private = db.Column(db.Boolean, default=False)   # AJOUTÉ pour éviter l'erreur
+    is_private = db.Column(db.Boolean, default=False)   # nécessaire pour d'éventuels filtres
     created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow)
 
     user = db.relationship('User', backref='videos')
@@ -227,14 +227,19 @@ class LiveStream(db.Model):
             'is_active': self.is_active,
             'viewers_count': self.viewers_count,
             'donations_amount': self.donations_amount,
-            'started_at': self.started_at.isoformat() if self.started_at else None   # CORRIGÉ
+            'started_at': self.started_at.isoformat() if self.started_at else None
         }
+
+# ==================== CRÉATION DES TABLES (EXÉCUTÉ À CHAQUE DÉMARRAGE) ====================
+with app.app_context():
+    db.create_all()
+    print("✅ Base de données vérifiée/créée")
 
 # ==================== ADMIN VIEWS ====================
 
 class AdminModelView(ModelView):
     def is_accessible(self):
-        return True  # Simplifié, vous pouvez ajouter une vérification
+        return True
 
 class UserAdmin(AdminModelView):
     column_list = ['username', 'email', 'role', 'is_active', 'balance', 'created_at']
@@ -440,17 +445,6 @@ def handle_join_live(data):
 def handle_live_comment(data):
     emit('new_live_comment', data, room=f"live_{data['live_id']}")
 
-# ==================== LANCEMENT ====================
-
+# ==================== LANCEMENT (pour exécution locale) ====================
 if __name__ == '__main__':
-    with app.app_context():
-        db.create_all()
-        print("✅ Base de données initialisée")
-        print("=" * 50)
-        print("🎬 KISE TIGI - Application Complète")
-        print("=" * 50)
-        print(f"📱 Interface: http://localhost:5000")
-        print(f"👑 Panel Admin: http://localhost:5000/admin")
-        print(f"📊 Dashboard: http://localhost:5000/admin-panel")
-        print("=" * 50)
     socketio.run(app, debug=True, host='0.0.0.0', port=5000)
