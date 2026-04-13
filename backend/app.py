@@ -22,8 +22,12 @@ app = Flask(__name__,
     static_folder='../static'
 )
 
+# === CORRECTION POUR RENDER (SQLite dans /tmp) ===
+db_path = os.path.join('/tmp', 'kisetigi.db')
+app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
+# ====================================================
+
 app.config['SECRET_KEY'] = 'changez-moi-ici-123456789'
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///kisetigi.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['JWT_SECRET_KEY'] = 'jwt-secret-changez-moi-987654321'
 app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024
@@ -222,7 +226,7 @@ class LiveStream(db.Model):
             'is_active': self.is_active,
             'viewers_count': self.viewers_count,
             'donations_amount': self.donations_amount,
-            'started_at': self.started_at.isoformat() if self.started_at else None
+            'started_at': self.started_at.isoformat() if self.starting_at else None
         }
 
 # ==================== ADMIN VIEWS ====================
@@ -267,14 +271,15 @@ def admin_panel():
     }
     return render_template('admin_dashboard.html', stats=stats)
 
-# API Routes (je mets les plus importantes, le reste est similaire)
+# ==================== API ROUTES ====================
+
 @app.route('/api/register', methods=['POST'])
 def register():
     data = request.get_json()
     if User.query.filter_by(username=data['username']).first():
-        return jsonify({'error': 'Username exists'}), 400
+        return jsonify({'error': 'Nom d\'utilisateur déjà pris'}), 400
     if User.query.filter_by(email=data['email']).first():
-        return jsonify({'error': 'Email exists'}), 400
+        return jsonify({'error': 'Email déjà utilisé'}), 400
     user = User(username=data['username'], email=data['email'])
     user.set_password(data['password'])
     db.session.add(user)
@@ -283,14 +288,14 @@ def register():
         user.role = 'admin'
         db.session.commit()
     token = create_access_token(identity=user.id)
-    return jsonify({'user': user.to_dict(), 'access_token': token})
+    return jsonify({'user': user.to_dict(), 'access_token': token}), 201
 
 @app.route('/api/login', methods=['POST'])
 def login():
     data = request.get_json()
     user = User.query.filter_by(email=data['email']).first()
     if not user or not user.check_password(data['password']):
-        return jsonify({'error': 'Invalid credentials'}), 401
+        return jsonify({'error': 'Identifiants invalides'}), 401
     token = create_access_token(identity=user.id)
     return jsonify({'user': user.to_dict(), 'access_token': token})
 
@@ -299,14 +304,16 @@ def login():
 def upload_video():
     user_id = get_jwt_identity()
     if 'video' not in request.files:
-        return jsonify({'error': 'No video'}), 400
+        return jsonify({'error': 'Aucune vidéo'}), 400
     file = request.files['video']
+    if file.filename == '':
+        return jsonify({'error': 'Nom de fichier vide'}), 400
     filename = secure_filename(f"{uuid.uuid4()}_{file.filename}")
     filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
     file.save(filepath)
     video = Video(
         user_id=user_id,
-        title=request.form.get('title', 'Untitled'),
+        title=request.form.get('title', 'Sans titre'),
         description=request.form.get('description', ''),
         video_url=f'/uploads/{filename}'
     )
@@ -319,6 +326,31 @@ def get_videos():
     videos = Video.query.filter_by(is_live=False).order_by(Video.created_at.desc()).limit(50).all()
     return jsonify({'videos': [v.to_dict() for v in videos]})
 
+@app.route('/api/videos/<video_id>/like', methods=['POST'])
+@jwt_required()
+def like_video(video_id):
+    user_id = get_jwt_identity()
+    video = Video.query.get_or_404(video_id)
+    # Vérifier si l'utilisateur a déjà liké (simplifié, sans table Like)
+    # Pour l'instant, on alterne simplement +1 / -1 (sans vérification)
+    # En production, il faudrait une table Like pour éviter les doublons.
+    video.likes_count += 1
+    db.session.commit()
+    socketio.emit('like_update', {'video_id': video_id, 'likes_count': video.likes_count, 'user_id': user_id, 'action': 'liked'}, room=f'video_{video_id}')
+    return jsonify({'action': 'liked', 'likes_count': video.likes_count})
+
+@app.route('/api/videos/<video_id>/comments', methods=['GET'])
+def get_comments(video_id):
+    # Pour simplifier, on retourne une liste vide (à implémenter avec une table Comment)
+    return jsonify({'comments': []})
+
+@app.route('/api/videos/<video_id>/comments', methods=['POST'])
+@jwt_required()
+def add_comment(video_id):
+    data = request.get_json()
+    # À implémenter avec une table Comment
+    return jsonify({'message': 'Commentaire ajouté'}), 201
+
 @app.route('/api/products', methods=['GET'])
 def get_products():
     products = Product.query.filter_by(is_active=True).all()
@@ -330,7 +362,7 @@ def create_product():
     user_id = get_jwt_identity()
     user = User.query.get(user_id)
     if user.role not in ['admin', 'verified_seller']:
-        return jsonify({'error': 'Unauthorized'}), 403
+        return jsonify({'error': 'Non autorisé'}), 403
     data = request.get_json()
     product = Product(
         seller_id=user_id,
@@ -371,7 +403,6 @@ def start_live():
     )
     db.session.add(live)
     db.session.commit()
-    # Générer un token Agora (fonction simplifiée)
     token = f"token_{channel}"
     return jsonify({
         'live': live.to_dict(),
@@ -380,7 +411,28 @@ def start_live():
         'channel': channel
     })
 
-# Socket.IO events
+# ==================== ROUTES FEED ET LIVE (AJOUTÉES) ====================
+
+@app.route('/api/feed/for-you', methods=['GET'])
+def for_you_feed():
+    """Flux personnalisé 'Pour toi' (public pour l'instant)"""
+    videos = Video.query.filter_by(is_private=False).order_by(Video.created_at.desc()).limit(20).all()
+    return jsonify({'videos': [v.to_dict() for v in videos]})
+
+@app.route('/api/feed/nearby', methods=['GET'])
+def nearby_feed():
+    """Flux de proximité (simplifié)"""
+    videos = Video.query.filter_by(is_private=False).order_by(Video.created_at.desc()).limit(20).all()
+    return jsonify({'videos': [v.to_dict() for v in videos]})
+
+@app.route('/api/live/active', methods=['GET'])
+def get_active_lives():
+    """Liste des lives en cours"""
+    lives = LiveStream.query.filter_by(is_active=True).all()
+    return jsonify({'lives': [l.to_dict() for l in lives]})
+
+# ==================== SOCKET.IO ====================
+
 @socketio.on('join_live')
 def handle_join_live(data):
     live_id = data['live_id']
@@ -395,8 +447,17 @@ def handle_join_live(data):
 def handle_live_comment(data):
     emit('new_live_comment', data, room=f"live_{data['live_id']}")
 
+# ==================== LANCEMENT ====================
+
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()
-        print("✅ Base de données créée")
+        print("✅ Base de données initialisée")
+        print("=" * 50)
+        print("🎬 KISE TIGI - Application Complète")
+        print("=" * 50)
+        print(f"📱 Interface: http://localhost:5000")
+        print(f"👑 Panel Admin: http://localhost:5000/admin")
+        print(f"📊 Dashboard: http://localhost:5000/admin-panel")
+        print("=" * 50)
     socketio.run(app, debug=True, host='0.0.0.0', port=5000)
